@@ -10,6 +10,7 @@ CC      = $(PREFIX)gcc
 AS      = $(PREFIX)gcc -x assembler-with-cpp
 CP      = $(PREFIX)objcopy
 SZ      = $(PREFIX)size
+NANO_SPECS := $(shell f="$(shell $(CC) -print-file-name=nano.specs 2>/dev/null)"; test "$$f" != "nano.specs" -a -f "$$f" && printf '%s' '-specs=nano.specs')
 
 ######################################################################
 # Paths
@@ -87,7 +88,7 @@ ASFLAGS = $(MCU) $(C_DEFS) $(C_INCLUDES)
 LDSCRIPT = bootloader.ld
 
 LDFLAGS  = $(MCU)
-LDFLAGS += -specs=nano.specs
+LDFLAGS += $(NANO_SPECS)
 LDFLAGS += -T$(LDSCRIPT)
 LDFLAGS += -Wl,--gc-sections
 LDFLAGS += -Wl,-Map=$(BUILD_DIR)/bootloader.map,--cref

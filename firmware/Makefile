@@ -11,6 +11,7 @@ CP      = $(PREFIX)objcopy
 SZ      = $(PREFIX)size
 OBJDUMP = $(PREFIX)objdump
 HOST_CC ?= gcc
+NANO_SPECS := $(shell f="$(shell $(CC) -print-file-name=nano.specs 2>/dev/null)"; test "$$f" != "nano.specs" -a -f "$$f" && printf '%s' '-specs=nano.specs')
 
 ######################################################################
 # Project paths
@@ -198,7 +199,7 @@ ASFLAGS = $(MCU) $(C_DEFS) $(C_INCLUDES)
 LDSCRIPT = ld/at32f403a_app.ld
 
 LDFLAGS  = $(MCU)
-LDFLAGS += -specs=nano.specs
+LDFLAGS += $(NANO_SPECS)
 LDFLAGS += -T$(LDSCRIPT)
 LDFLAGS += -Wl,--gc-sections
 LDFLAGS += -Wl,-Map=$(BUILD_DIR)/firmware.map,--cref
