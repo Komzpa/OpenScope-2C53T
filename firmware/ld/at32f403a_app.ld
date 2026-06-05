@@ -4,7 +4,8 @@
  *
  * Flash layout:
  *   0x08000000 - 0x08003FFF  Bootloader (16KB, not touched by app)
- *   0x08004000 - 0x080FFFFF  Application (1008KB)
+ *   0x08004000 - 0x080FF7FF  Application (1006KB)
+ *   0x080FF800 - 0x080FFFFF  App settings sector (2KB)
  *
  * RAM: 224KB with EOPB0=0xFE
  * Note: 0x20037FF0 is reserved for bootloader magic word
@@ -19,7 +20,7 @@ _Min_Stack_Size = 0x400;
 
 MEMORY
 {
-  FLASH (rx)      : ORIGIN = 0x08004000, LENGTH = 1008K
+  FLASH (rx)      : ORIGIN = 0x08004000, LENGTH = 1006K
   RAM (xrw)       : ORIGIN = 0x20000000, LENGTH = 224K
   SPIM (rx)       : ORIGIN = 0x08400000, LENGTH = 16384K
 }

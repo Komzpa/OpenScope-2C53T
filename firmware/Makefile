@@ -10,6 +10,7 @@ AS      = $(PREFIX)gcc -x assembler-with-cpp
 CP      = $(PREFIX)objcopy
 SZ      = $(PREFIX)size
 OBJDUMP = $(PREFIX)objdump
+HOST_CC ?= gcc
 
 ######################################################################
 # Project paths
@@ -262,7 +263,7 @@ $(BUILD_DIR)/$(TARGET).bin: $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/option_bytes
 #
 # Flashed via: dfu-util -a 1 -d 2e3c:df11 -s 0x1FFFF800 -D build/option_bytes48.bin
 $(BUILD_DIR)/option_bytes48.bin: Makefile | $(BUILD_DIR)
-	@printf '\xA5\x5A\xFF\x00\xFF\x00\xFF\x00\xFF\x00\xFF\x00\xFF\x00\xFF\x00\xFE\x01\xFF\x00\xFF\x00\xFF\x00\xFF\x00\xFF\x00\xFF\x00\xFF\x00\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF' > $@
+	@printf '\245\132\377\000\377\000\377\000\377\000\377\000\377\000\377\000\376\001\377\000\377\000\377\000\377\000\377\000\377\000\377\000\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377' > $@
 	@echo "Built: $@ ($$(wc -c < $@ | tr -d ' ') bytes) — EOPB0=0xFE, 224KB SRAM"
 
 $(BUILD_DIR)/$(TARGET).hex: $(BUILD_DIR)/$(TARGET).elf
@@ -337,4 +338,18 @@ soak-test: emu
 soak-quick: emu
 	python3 ../scripts/soak_test.py --no-build --duration 30 --seed $(SOAK_SEED) --verbose
 
-.PHONY: all clean disasm size renode soak-test soak-quick flash flash-dfu bootloader flash-bootloader flash-all
+$(BUILD_DIR)/test_meter_data: tests/test_meter_data.c src/drivers/meter_data.c src/drivers/meter_data.h | $(BUILD_DIR)
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -Isrc/drivers $< src/drivers/meter_data.c -lm -o $@
+
+test-meter-data: $(BUILD_DIR)/test_meter_data
+	$<
+
+$(BUILD_DIR)/test_meter_voltage_wave: tests/test_meter_voltage_wave.c src/ui/meter_voltage_wave.c src/ui/meter_voltage_wave.h | $(BUILD_DIR)
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -Isrc/ui $< src/ui/meter_voltage_wave.c -lm -o $@
+
+test-meter-voltage-wave: $(BUILD_DIR)/test_meter_voltage_wave
+	$<
+
+test-meter: test-meter-data test-meter-voltage-wave
+
+.PHONY: all clean disasm size renode soak-test soak-quick flash flash-dfu bootloader flash-bootloader flash-all test-meter-data test-meter-voltage-wave test-meter

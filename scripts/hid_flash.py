@@ -20,6 +20,9 @@ Usage:
 import sys
 import struct
 import time
+import glob
+import os
+import select
 
 try:
     import hid
@@ -30,6 +33,7 @@ except ImportError:
 VID = 0x2E3C
 PID = 0xAF01
 APP_ADDRESS = 0x08004000
+APP_SETTINGS_ADDRESS = 0x080FF800
 CHUNK_SIZE = 60       # data bytes per HID report (64 - 4 header)
 BLOCK_SIZE = 1024     # bootloader buffers this much before programming
 REPORT_SIZE = 64
@@ -46,6 +50,90 @@ CMD_GET    = 0x5AA7
 
 ACK  = 0xFF00
 NACK = 0x00FF
+
+
+class HidrawBootloaderDevice:
+    """Minimal hidraw transport for Linux hosts where hidapi open() fails."""
+
+    def __init__(self, path):
+        self.path = path
+        self.fd = os.open(path, os.O_RDWR | os.O_NONBLOCK)
+
+    def write(self, data):
+        offset = 0
+        while offset < len(data):
+            _, writable, _ = select.select([], [self.fd], [], 5.0)
+            if not writable:
+                raise TimeoutError(f"hidraw write timeout on {self.path}")
+            offset += os.write(self.fd, data[offset:])
+        return offset
+
+    def read(self, length, timeout_ms=5000):
+        deadline = time.monotonic() + timeout_ms / 1000.0
+        while time.monotonic() < deadline:
+            remaining = max(0.0, deadline - time.monotonic())
+            readable, _, _ = select.select([self.fd], [], [], min(0.05, remaining))
+            if not readable:
+                continue
+            try:
+                return os.read(self.fd, length)
+            except BlockingIOError:
+                continue
+        return []
+
+    def get_manufacturer_string(self):
+        return "Artery"
+
+    def get_product_string(self):
+        return "HID IAP (hidraw)"
+
+    def close(self):
+        os.close(self.fd)
+
+
+def _candidate_hidraw_paths():
+    patterns = [
+        "/dev/input/by-id/usb-Artery_HID_IAP*-hidraw",
+        "/dev/input/by-path/*-hidraw",
+        "/dev/hidraw*",
+    ]
+    seen = set()
+    for pattern in patterns:
+        for raw_path in glob.glob(pattern):
+            path = os.path.realpath(raw_path)
+            if path in seen:
+                continue
+            seen.add(path)
+            yield path
+
+
+def _hidraw_matches_bootloader(path):
+    try:
+        name = os.path.basename(path)
+        with open(f"/sys/class/hidraw/{name}/device/uevent", "r", encoding="ascii") as f:
+            text = f.read()
+    except OSError:
+        return False
+    return "HID_ID=0003:00002E3C:0000AF01" in text
+
+
+def open_bootloader_device():
+    dev = hid.device()
+    try:
+        dev.open(VID, PID)
+        return dev
+    except OSError as exc:
+        last_error = exc
+
+    for path in _candidate_hidraw_paths():
+        if not _hidraw_matches_bootloader(path):
+            continue
+        try:
+            return HidrawBootloaderDevice(path)
+        except OSError as exc:
+            last_error = exc
+
+    raise last_error
 
 
 def make_cmd(cmd, payload=b""):
@@ -87,12 +175,17 @@ def flash_firmware(binpath, do_jump=True, app_address=APP_ADDRESS):
     if pad < BLOCK_SIZE:
         firmware += b"\xFF" * pad
 
+    if app_address < APP_ADDRESS or app_address + len(firmware) > APP_SETTINGS_ADDRESS:
+        max_size = APP_SETTINGS_ADDRESS - app_address
+        raise RuntimeError(
+            f"refusing to flash {len(firmware)} padded bytes at 0x{app_address:08X}: "
+            f"maximum app payload before settings sector is {max_size} bytes"
+        )
+
     print(f"Padded to {len(firmware)} bytes ({len(firmware) // BLOCK_SIZE} blocks)")
 
-    # Open HID device
-    dev = hid.device()
     try:
-        dev.open(VID, PID)
+        dev = open_bootloader_device()
     except OSError:
         print(f"Error: Cannot find device VID:0x{VID:04X} PID:0x{PID:04X}")
         print("Make sure the bootloader is running (Settings > Firmware Update, or no valid app)")
